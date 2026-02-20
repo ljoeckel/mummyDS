@@ -60,6 +60,27 @@ type
     clientSocket: SocketHandle
     clientId: uint64
 
+  SSEEvent* = object
+    ## Represents a Server-Sent Events message according to W3C spec
+    event*: Option[string]  ## Optional event type field
+    data*: string           ## Data field (multiline supported)
+    id*: Option[string]     ## Optional event ID field
+    retry*: Option[int]     ## Optional retry timeout in milliseconds
+
+  SSERawEvent* = object
+    ## Represents a Server-Sent Events message without the "data: " prefix
+    event*: Option[string]  ## Optional event type field
+    data*: string           ## Data field (multiline supported)
+    id*: Option[string]     ## Optional event ID field
+    retry*: Option[int]     ## Optional retry timeout in milliseconds
+
+  SSEConnection* = object
+    ## Represents an active Server-Sent Events connection
+    server*: Server
+    clientSocket*: SocketHandle
+    clientId*: uint64
+    active*: bool
+
   Message* = object
     kind*: MessageKind
     data*: string
@@ -129,6 +150,7 @@ type
       upgradedToWebSocket, closeFrameSent: bool
       sendsWaitingForUpgrade: seq[OutgoingBuffer]
       requestCounter: int # Incoming request incs, outgoing response decs
+      upgradedToSSE: bool
 
   IncomingRequestState = object
     headersParsed: bool
@@ -151,7 +173,7 @@ type
   OutgoingBuffer {.acyclic.} = ref object
     clientSocket: SocketHandle
     clientId: uint64
-    closeConnection, isWebSocketUpgrade, isCloseFrame: bool
+    closeConnection, isWebSocketUpgrade, isCloseFrame, isSSEUpgrade: bool
     buffer1, buffer2: string
     bytesSent: int
 
@@ -171,6 +193,42 @@ proc `$`*(request: Request): string {.gcsafe.} =
 
 proc `$`*(websocket: WebSocket): string =
   "WebSocket " & $cast[uint](hash(websocket))
+
+proc formatSSEEvent*(event: SSEEvent|SSERawEvent): string {.raises: [], gcsafe.} =
+  ## Follow the W3C SSE spec
+  ## Each event consists of optional fields followed by a data field,
+  ## with each line prefixed by the field name. Event terminates with blank line.
+  result = newStringOfCap(256)
+
+  if event.event.isSome:
+    result.add("event: ")
+    result.add(event.event.get())
+    result.add('\n')
+
+  if event.id.isSome:
+    result.add("id: ")
+    result.add(event.id.get())
+    result.add('\n')
+
+  if event.retry.isSome:
+    result.add("retry: ")
+    result.add($event.retry.get())
+    result.add('\n')
+
+  if event.data.len > 0:
+    var pos = 0
+    while pos < event.data.len:
+      when (event is SSEEvent):
+        result.add("data: ")
+      let lineStart = pos
+      while pos < event.data.len and event.data[pos] != '\n':
+        inc pos
+      result.add(event.data[lineStart ..< pos])
+      result.add('\n')
+      if pos < event.data.len and event.data[pos] == '\n':
+        inc pos
+
+  result.add('\n')  # Empty line terminates the event
 
 proc log(server: Server, level: LogLevel, args: varargs[string]) =
   if server.logHandler == nil:
@@ -442,6 +500,95 @@ proc upgradeToWebSocket*(
   headers["Sec-WebSocket-Accept"] = base64.encode(hash)
 
   request.respond(101, headers)
+
+proc respondSSE*(
+  request: Request,
+  headers: sink HttpHeaders = emptyHttpHeaders()
+): SSEConnection {.raises: [MummyError], gcsafe.} =
+  ## Starts a Server-Sent Events (SSE) response for real-time streaming.
+  ## Sets appropriate SSE headers and keeps the connection open.
+  ## Returns an SSEConnection that can be used to send events.
+
+  if request.responded:
+    raise newException(
+      MummyError,
+      "Cannot start SSE on a request that has already received a response"
+    )
+
+  headers["Content-Type"] = "text/event-stream"
+  headers["Cache-Control"] = "no-cache"
+  headers["Connection"] = "keep-alive"
+
+  result = SSEConnection(
+    server: request.server,
+    clientSocket: request.clientSocket,
+    clientId: request.clientId,
+    active: true
+  )
+
+  var encodedResponse = OutgoingBuffer()
+  encodedResponse.clientSocket = request.clientSocket
+  encodedResponse.clientId = request.clientId
+  encodedResponse.closeConnection = false
+  encodedResponse.isSSEUpgrade = true
+  encodedResponse.buffer1 = encodeHeaders(200, headers)
+
+  var queueWasEmpty: bool
+  withLock request.server.responseQueueLock:
+    queueWasEmpty = request.server.responseQueue.len == 0
+    request.server.responseQueue.addLast(move encodedResponse)
+
+  if queueWasEmpty:
+    request.server.trigger(request.server.responseQueued)
+
+  request.responded = true
+
+proc send*(
+  connection: SSEConnection,
+  event: SSEEvent|SSERawEvent
+) {.raises: [], gcsafe.} =
+  ## Send an SSE event to the client.
+  ## This is thread-safe and can be called from any thread.
+  ## If the connection is not active, this does nothing.
+
+  if not connection.active:
+    return
+
+  let formattedEvent = formatSSEEvent(event)
+
+  var buffer = OutgoingBuffer()
+  buffer.clientSocket = connection.clientSocket
+  buffer.clientId = connection.clientId
+  buffer.closeConnection = false
+  buffer.buffer1 = formattedEvent
+
+  var queueWasEmpty: bool
+  withLock connection.server.responseQueueLock:
+    queueWasEmpty = connection.server.responseQueue.len == 0
+    connection.server.responseQueue.addLast(move buffer)
+
+  if queueWasEmpty:
+    connection.server.trigger(connection.server.responseQueued)
+
+proc close*(connection: var SSEConnection) {.raises: [], gcsafe.} =
+  ## Close the SSE connection.
+  ## This marks the connection as inactive and will close the underlying socket
+  ## after any pending events are sent.
+
+  connection.active = false
+
+  var buffer = OutgoingBuffer()
+  buffer.clientSocket = connection.clientSocket
+  buffer.clientId = connection.clientId
+  buffer.closeConnection = true
+
+  var queueWasEmpty: bool
+  withLock connection.server.responseQueueLock:
+    queueWasEmpty = connection.server.responseQueue.len == 0
+    connection.server.responseQueue.addLast(move buffer)
+
+  if queueWasEmpty:
+    connection.server.trigger(connection.server.responseQueued)
 
 proc workerProc(server: Server) {.raises: [].} =
   # The worker threads run the task queue here
@@ -1067,6 +1214,17 @@ proc afterRecv(
   # If not, treat incoming bytes as part of HTTP requests.
   if dataEntry.upgradedToWebSocket:
     server.afterRecvWebSocket(clientSocket, dataEntry)
+  elif dataEntry.upgradedToSSE:
+    # SSE connections are unidirectional (server -> client)
+    # If client sends data, close the connection
+    if dataEntry.bytesReceived > 0:
+      server.log(DebugLevel, "Received unexpected data on SSE connection, closing")
+      return true  # Close connection
+    # If recv returns 0 bytes, client disconnected
+    if dataEntry.bytesReceived == 0:
+      server.log(DebugLevel, "SSE client disconnected")
+      return true  # Close connection
+    return false  # Keep connection open
   else:
     server.afterRecvHttp(clientSocket, dataEntry)
 
@@ -1082,12 +1240,15 @@ proc afterSend(
     # The current outgoing buffer for this socket has been fully sent
     # Remove it from the outgoing buffer queue
     dataEntry.outgoingBuffers.shrink(fromFirst = 1)
+    if outgoingBuffer.isSSEUpgrade:
+      dataEntry.upgradedToSSE = true
     if outgoingBuffer.isCloseFrame:
       dataEntry.closeFrameSent = true
     if outgoingBuffer.closeConnection:
       return true
   # If we don't have any more outgoing buffers, update the selector
-  if dataEntry.outgoingBuffers.len == 0:
+  # But keep Write enabled for SSE connections so we can send events
+  if dataEntry.outgoingBuffers.len == 0 and not dataEntry.upgradedToSSE:
     server.selector.updateHandle2(clientSocket, {Read})
 
 proc destroy(server: Server, joinThreads: bool) {.raises: [].} =
@@ -1317,6 +1478,10 @@ proc loopForever(server: Server) {.raises: [OSError, IOSelectorsException].} =
             continue
 
         if Write in readyKey.events:
+          if dataEntry.outgoingBuffers.len == 0:
+            server.selector.updateHandle2(readyKey.fd.SocketHandle, {Read})
+            continue
+
           let
             outgoingBuffer = dataEntry.outgoingBuffers.peekFirst()
             bytesSent =
@@ -1326,7 +1491,7 @@ proc loopForever(server: Server) {.raises: [OSError, IOSelectorsException].} =
                   (outgoingBuffer.buffer1.len - outgoingBuffer.bytesSent).cint,
                   when defined(MSG_NOSIGNAL): MSG_NOSIGNAL else: 0
                 )
-              else:
+              elif outgoingBuffer.buffer2.len > 0:
                 let buffer2Pos =
                   outgoingBuffer.bytesSent - outgoingBuffer.buffer1.len
                 readyKey.fd.SocketHandle.send(
@@ -1334,6 +1499,8 @@ proc loopForever(server: Server) {.raises: [OSError, IOSelectorsException].} =
                   (outgoingBuffer.buffer2.len - buffer2Pos).cint,
                   when defined(MSG_NOSIGNAL): MSG_NOSIGNAL else: 0
                 )
+              else:
+                0  # buffer1 is done and buffer2 is empty, nothing to send
           if bytesSent > 0:
             outgoingBuffer.bytesSent += bytesSent
             sentTo.add(readyKey.fd.SocketHandle)
