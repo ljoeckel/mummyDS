@@ -122,6 +122,7 @@ type
     websocketClaimed: Table[WebSocket, bool]
     websocketQueues: Table[WebSocket, Deque[WebSocketUpdate]]
     websocketQueuesLock: Lock
+    nsBindingAborted*: seq[uint64]
 
   Server* = ptr ServerObj
 
@@ -1366,9 +1367,13 @@ proc loopForever(server: Server) {.raises: [OSError, IOSelectorsException].} =
                 clientDataEntry.sendsWaitingForUpgrade.setLen(0)
           else:
             # Was this file descriptor reused for a different client?
-            server.log(DebugLevel, "Dropped response to disconnected client")
+            if not server.nsBindingAborted.contains(encodedResponse.clientId):
+              server.nsBindingAborted.add(encodedResponse.clientId)            
+              server.log(DebugLevel, "1372 Dropped response to disconnected client. nsBindingAborted:", repr(server.nsBindingAborted))
         else:
-          server.log(DebugLevel, "Dropped response to disconnected client")
+          if not server.nsBindingAborted.contains(encodedResponse.clientId):
+            server.nsBindingAborted.add(encodedResponse.clientId)
+            server.log(DebugLevel, "1375 Dropped response to disconnected client. nsBindingAborted:", repr(server.nsBindingAborted))
 
     if sendQueuedTriggered:
       # If we have any sends queued move them to the outgoing buffer queue of

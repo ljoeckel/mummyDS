@@ -18,6 +18,10 @@ Mummy has been written specifically to maximize the performance of your server h
 
 Mummy requires `--threads:on` and `--mm:orc` or `--mm:arc`.
 
+### `mummyDS` extends `mummy` with [SSE](https://en.wikipedia.org/wiki/Server-sent_events) and [Datastar](https://data-star.dev).
+- See examples/simple_datastar.nim to get an idea how Datastar works.
+- The implementation of the Datastar API is work in progress.
+
 The Mummy name refers to [historical Egypt stuff](docs/mummy.jpg).
 
 ## Sites using Mummy
