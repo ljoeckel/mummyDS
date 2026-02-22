@@ -2,7 +2,7 @@
 import ../src/mummy
 import ../src/mummy/routers
 import ../src/mummy/datastar
-import std/[json, options, os, uri, strutils, strformat, times]
+import std/[json, options, os, strutils, strformat, times]
 
 var count = 0
 # /increment (Close the connection after patchSignals)
@@ -24,13 +24,19 @@ proc handleIncrement(request: Request) =
 proc handleUpdateClock(request: Request) =
   var sse = request.respondSSE()
   while true:
-    sleep(1000)
     let tm = $now()
     try:
       patchElements(sse, fmt"<h3 id='clock'>{tm}</h3>")
     except:
       echo "Leaving handleUpdateClock: ", getCurrentExceptionMsg()
       break
+    sleep(1000)
+
+
+proc handleRunScript(request: Request) =
+    var sse = request.respondSSE(); defer: sse.close()
+    executeScript(sse, fmt"console.log('Script erfolgreich von Nim ausgeführt!'); alert('Hallo von Nim after {count} clicks!');")
+
 
 # Look at html/index.html
 when isMainModule:
@@ -38,6 +44,7 @@ when isMainModule:
   var router = Router()
   router.get("/increment", handleIncrement)
   router.get("/update-clock", handleUpdateClock)
+  router.get("/run-script", handleRunScript)
   router.notFoundHandler = serveStatic
 
   let server = newServer(router)

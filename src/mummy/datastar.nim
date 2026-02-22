@@ -1,7 +1,11 @@
 import ../mummy
-import std/[json, strutils, uri, strformat, options, os, paths]
+import std/[json, strutils, uri, strformat, options, os, paths, tables]
 import mimetypes
 
+type
+  EventType* = enum
+    PatchElements = "datastar-patch-elements"
+    PatchSignals = "datastar-patch-signals"
 
 type
   ElementPatchMode* = enum
@@ -13,6 +17,7 @@ type
     Before = "before"
     After = "after"
     Remove = "remove"
+
 
 proc isNsBindingAborted(sse: SSEConnection): bool =
   let idx = sse.server.nsBindingAborted.find(sse.clientId)
@@ -27,20 +32,29 @@ proc getSignals*(req: Request): JsonNode =
     signals = decodeUrl(encodedValue)
     result = parseJson(signals)
 
+
+proc rawSend(sse: SSEConnection, evttype: EventType, lines:seq[string], eventId="", retryDuration=0) =
+  var evt: SSEEvent
+  evt.event = some($evttype)
+  if eventId.len > 0: evt.id = some(eventId)
+  if retryDuration > 0: evt.retry = some(retryDuration)
+
+  for i in 0..<lines.len:
+    evt.data.add(lines[i])
+    if i < lines.len-1: evt.data.add('\n')
+
+  sse.send(evt)
+
+
 # Datastar 'patchSignals'
 proc patchSignals*(sse: SSEConnection, signals: JsonNode, onlyIfMissing=false,  eventId="", retryDuration=0) {.raises: [MummyError].} =
   if isNsBindingAborted(sse): raise newException(MummyError, fmt"NS_BINDING_ABORTED for clientId:{sse.clientId}")
 
-  var data: string
+  var data: seq[string]
   if onlyIfMissing: data.add("onlyIfMissing true\n")
   data.add("signals " & $signals & "\n")
 
-  var evt: SSEEvent
-  evt.event = some("datastar-patch-signals")
-  if eventId.len > 0: evt.id = some(eventId)
-  if retryDuration > 0: evt.retry = some(retryDuration)
-  evt.data = data
-  sse.send(evt)
+  rawSend(sse, PatchSignals, data, eventId, retryDuration)
 
 
 # Datastar 'patchElements'
@@ -68,25 +82,28 @@ proc patchElements*(sse: SSEConnection, elements: string, selector="", mode=Oute
     for elementLine in elements.split('\n'):
       lines.add("elements " & elementLine)
 
-  var data: string
-  for line in lines:
-    data.add(line & "\n")
-
-  var evt: SSEEvent
-  evt.event = some("datastar-patch-elements")
-  if eventId.len > 0: evt.id = some(eventId)
-  if retryDuration > 0: evt.retry = some(retryDuration)
-  evt.data = data
-  sse.send(evt)
+  rawSend(sse, PatchElements, lines, eventId, retryDuration)
 
 
-# proc executeScript*(request: Request, script: string) =
-#     var sse = request.respondSSE(); defer: sse.close()
-#     sse.executeScript(script)
+proc executeScript*(sse: SSEConnection, script: string, autoRemove=true, attributes=initTable[string, string](), eventId="", retryDuration=0) =
+  ## Execute a script by generating a <script> tag and using patchElements
+  ## Order for executeScript: mode, selector, elements
+  var scriptTag = "<script"
+  for key, val in attributes:
+    scriptTag.add " " & key & "=\"" & val & "\""
+  if autoRemove:
+    scriptTag.add " data-effect=\"el.remove()\""
+  scriptTag.add ">" & script & "</script>"
 
-# # Reload /
-# proc reload*(request: Request) {.async.} =
-#     executeScript(request, "window.location.reload()")
+  # executeScript always uses mode=append, selector=body with specific order
+  var lines: seq[string]
+  lines.add("mode " & $Append)
+  lines.add("selector body")
+  for elementLine in scriptTag.split('\n'):
+    lines.add("elements " & elementLine)
+  
+  rawSend(sse, PatchElements, lines, eventId, retryDuration)
+
 
 # # Forward to another page
 # proc forward*(request: Request, url: string) =
