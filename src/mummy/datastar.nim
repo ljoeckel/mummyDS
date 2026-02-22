@@ -1,6 +1,6 @@
 import ../mummy
-import std/[json, strutils, uri, strformat, options]
-#import mimetypes
+import std/[json, strutils, uri, strformat, options, os, paths]
+import mimetypes
 
 
 type
@@ -94,11 +94,16 @@ proc patchElements*(sse: SSEConnection, elements: string, selector="", mode=Oute
 #     patchElements(request, data)
 
 
-# # Serve static resources (html, css, etc.
-# proc serveStatic*(request: Request, file: string, ext: string) =
-#     let path = Path("html/" & file & ext)
-#     try:
-#         let data = readFile($path)
-#         request.respond(Http200, data, newHttpHeaders([("Content-Type", getMimeType(ext))]))
-#     except:
-#         request.respond(Http404, "<h1>File '" & $path & "' not found</h1>", newHttpHeaders([("Content-Type", "text/html")]))
+# Serve static resources (html, css, etc.
+proc serveStatic*(request: Request) {.gcsafe.} = #, file: string, ext: string) =
+    var (dir, fn, ext) = request.uri.splitFile()
+    if fn.len == 0 and dir == "/": 
+        fn = "index"
+        ext = ".html"
+
+    let path = Path("html/" & $fn & $ext)
+    try:
+        let data = readFile($path)
+        request.respond(200, @[("Content-Type", getMimeType(ext))], data)
+    except:
+        request.respond(404, @[("Content-Type", "text/html")], "<h1>File '" & $path & "' not found</h1>")

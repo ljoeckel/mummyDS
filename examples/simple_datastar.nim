@@ -32,33 +32,13 @@ proc handleUpdateClock(request: Request) =
       echo "Leaving handleUpdateClock: ", getCurrentExceptionMsg()
       break
 
-# /
-proc handleRoot(request: Request) =
-  let html = """
-<!DOCTYPE html>
-<html>
-<head data-init="@get('/update-clock')">
-    <meta charset="UTF-8">
-    <script type="module"
-        src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.0-RC.7/bundles/datastar.js"></script>
-</head>
-<body data-signals="{value: 0, info: ''}">
-    <h3 id="clock">2026-01-01T00:00:00+00:00</h3>
-    <button type="button" data-text="$value" data-on:click="@get('/increment')"></button>
-    <input name="info" placeholder="Click button.." data-bind="info">
-</body>
-</html>
-"""
-  request.respond(200, @[("Content-Type", "text/html")], html)
-
-   
+# Look at html/index.html
 when isMainModule:
   let (host, port) = ("192.168.1.159", 8080)
-
   var router = Router()
-  router.get("/", handleRoot)
   router.get("/increment", handleIncrement)
   router.get("/update-clock", handleUpdateClock)
+  router.notFoundHandler = serveStatic
 
   let server = newServer(router)
   echo fmt"Simple SSE / Datastar server - Open http://{host}:{port} in your browser"
