@@ -28,8 +28,13 @@ proc isNsBindingAborted(sse: SSEConnection): bool =
 
 proc getSignals*(req: Request): JsonNode =
     var signals: string
-    let encodedValue = req.uri.split('=')[1]
-    signals = decodeUrl(encodedValue)
+    
+    if req.httpMethod == "POST":
+      signals = $req.body
+    else:
+      let encodedValue = req.uri.split('=')[1]
+      signals = decodeUrl(encodedValue)
+
     result = parseJson(signals)
 
 
@@ -105,19 +110,19 @@ proc executeScript*(sse: SSEConnection, script: string, autoRemove=true, attribu
   rawSend(sse, PatchElements, lines, eventId, retryDuration)
 
 
-# # Forward to another page
-# proc forward*(request: Request, url: string) =
-#     let data = readFile(url)
-#     patchElements(request, data)
+# Forward to another page
+proc forward*(sse: SSEConnection, url: string) =
+    let data = readFile(url)
+    echo "forward: url:", url, " data:", data
+    patchElements(sse, data)
 
 
 # Serve static resources (html, css, etc.
 proc serveStatic*(request: Request) {.gcsafe.} = #, file: string, ext: string) =
-    var (dir, fn, ext) = request.uri.splitFile()
+    var (dir, fn, ext) = request.path.splitFile()
     if fn.len == 0 and dir == "/": 
         fn = "index"
         ext = ".html"
-
     let path = Path("html/" & $fn & $ext)
     try:
         let data = readFile($path)
