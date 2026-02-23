@@ -22,7 +22,12 @@ Mummy requires `--threads:on` and `--mm:orc` or `--mm:arc`.
 - See examples/simple_datastar.nim to get an idea how Datastar works.
 - The implementation of the Datastar API is work in progress.
 
+See [nimyottadb](https://github.com/ljoeckel/nimydbsamples.git) for a SPA demo implemented with pure HTML, CSS and Nim. There is no JavaScript framework involved. Persistence is realized with [YottaDB](https://yottadb.com/)
+
+
 The Mummy name refers to [historical Egypt stuff](docs/mummy.jpg).
+
+
 
 ## Sites using Mummy
 
