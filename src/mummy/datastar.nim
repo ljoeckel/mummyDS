@@ -28,7 +28,6 @@ proc isNsBindingAborted(sse: SSEConnection): bool =
 
 proc getSignals*(req: Request): JsonNode =
     var signals: string
-    
     if req.httpMethod == "POST":
       signals = $req.body
     else:
@@ -113,7 +112,6 @@ proc executeScript*(sse: SSEConnection, script: string, autoRemove=true, attribu
 # Forward to another page
 proc forward*(sse: SSEConnection, url: string) =
     let data = readFile(url)
-    echo "forward: url:", url, " data:", data
     patchElements(sse, data)
 
 

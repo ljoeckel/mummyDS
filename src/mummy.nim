@@ -80,6 +80,7 @@ type
     clientSocket*: SocketHandle
     clientId*: uint64
     active*: bool
+    request*: Request
 
   Message* = object
     kind*: MessageKind
@@ -524,7 +525,8 @@ proc respondSSE*(
     server: request.server,
     clientSocket: request.clientSocket,
     clientId: request.clientId,
-    active: true
+    active: true,
+    request: request
   )
 
   var encodedResponse = OutgoingBuffer()
