@@ -11,3 +11,6 @@ nimcache
 .*
 *.out
 *.sqlite3
+nimble.develop
+nimble.paths
+nimbledeps
