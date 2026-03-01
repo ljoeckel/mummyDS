@@ -395,7 +395,7 @@ proc respond*(
   if body.len > 860 and "Content-Encoding" notin headers:
     if request.headers.headerContainsToken("Accept-Encoding", "gzip"):
       try:
-        body = compress(body.cstring, body.len, BestSpeed, dfGzip)
+        body = compress(body.cstring, body.len, DefaultCompression, dfGzip)
         headers["Content-Encoding"] = "gzip"
       except Exception as e:
         # This should never happen since exceptions are only thrown if
@@ -406,7 +406,7 @@ proc respond*(
         )
     elif request.headers.headerContainsToken("Accept-Encoding", "deflate"):
       try:
-        body = compress(body.cstring, body.len, BestSpeed, dfDeflate)
+        body = compress(body.cstring, body.len, DefaultCompression, dfDeflate)
         headers["Content-Encoding"] = "deflate"
       except Exception as e:
         # See gzip

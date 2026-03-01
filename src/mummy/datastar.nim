@@ -27,14 +27,17 @@ proc isNsBindingAborted(sse: SSEConnection): bool =
 
 
 proc getSignals*(req: Request): JsonNode =
-    var signals: string
-    if req.httpMethod == "POST":
-      signals = $req.body
-    else:
-      let encodedValue = req.uri.split('=')[1]
-      signals = decodeUrl(encodedValue)
+  var signals: string
+  if req.httpMethod == "POST":
+    signals = $req.body
+  else:
+    let encodedValue = req.uri.split('=')[1]
+    signals = decodeUrl(encodedValue)
 
-    result = parseJson(signals)
+  result = parseJson(signals)
+
+proc getSignals*(sse: SSEConnection): JsonNode =
+  getSignals(sse.request)
 
 
 proc rawSend(sse: SSEConnection, evttype: EventType, lines:seq[string], eventId="", retryDuration=0) =
