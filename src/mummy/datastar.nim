@@ -31,9 +31,11 @@ proc getSignals*(req: Request): JsonNode =
   if req.httpMethod == "POST":
     signals = $req.body
   else:
-    let encodedValue = req.uri.split('=')[1]
-    signals = decodeUrl(encodedValue)
-
+    if req.uri.contains('='):
+      let encodedValue = req.uri.split('=')[1]
+      signals = decodeUrl(encodedValue)
+    else:
+      signals = "{}"
   result = parseJson(signals)
 
 proc getSignals*(sse: SSEConnection): JsonNode =
