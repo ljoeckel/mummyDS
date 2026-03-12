@@ -20,6 +20,7 @@ type
 
 
 proc isNsBindingAborted(sse: SSEConnection): bool =
+  # Remove a disconnected clientId entry from the list
   let idx = sse.server.nsBindingAborted.find(sse.clientId)
   if idx != -1:
     sse.server.nsBindingAborted.delete(idx)
@@ -57,6 +58,8 @@ proc rawSend(sse: SSEConnection, evttype: EventType, lines:seq[string], eventId=
 
 # Datastar 'patchSignals'
 proc patchSignals*(sse: SSEConnection, signals: JsonNode, onlyIfMissing=false,  eventId="", retryDuration=0) {.raises: [MummyError].} =
+  # Check if a client was prior disconnected (Tab closed, Browser closed, etc.)
+  # Then raise exception that the client-program can cleanup
   if isNsBindingAborted(sse): raise newException(MummyError, fmt"NS_BINDING_ABORTED for clientId:{sse.clientId}")
 
   var data: seq[string]

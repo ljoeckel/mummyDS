@@ -1369,13 +1369,12 @@ proc loopForever(server: Server) {.raises: [OSError, IOSelectorsException].} =
                 clientDataEntry.sendsWaitingForUpgrade.setLen(0)
           else:
             # Was this file descriptor reused for a different client?
-            if not server.nsBindingAborted.contains(encodedResponse.clientId):
-              server.nsBindingAborted.add(encodedResponse.clientId)            
-              server.log(DebugLevel, "1372 Dropped response to disconnected client. nsBindingAborted:", repr(server.nsBindingAborted))
+            server.log(DebugLevel, "1372 Dropped response to disconnected client: ", $encodedResponse.clientId)
         else:
-          if not server.nsBindingAborted.contains(encodedResponse.clientId):
-            server.nsBindingAborted.add(encodedResponse.clientId)
-            server.log(DebugLevel, "1375 Dropped response to disconnected client. nsBindingAborted:", repr(server.nsBindingAborted))
+          if not server.nsBindingAborted.contains(encodedResponse.clientId) and not encodedResponse.closeConnection:
+              server.nsBindingAborted.add(encodedResponse.clientId)
+              server.log(DebugLevel, "1376 Dropped response to disconnected client: ", $encodedResponse.clientId, ", nsBindingAborted.len:", $server.nsBindingAborted.len)
+              if server.nsBindingAborted.len > 100: server.nsBindingAborted.delete(0) # limit growing            
 
     if sendQueuedTriggered:
       # If we have any sends queued move them to the outgoing buffer queue of
