@@ -64,7 +64,7 @@ proc patchSignals*(sse: SSEConnection, signals: JsonNode, onlyIfMissing=false,  
 
   var data: seq[string]
   if onlyIfMissing: data.add("onlyIfMissing true\n")
-  data.add("signals " & $signals & "\n")
+  data.add("signals " & strip($signals) & "\n")
 
   rawSend(sse, PatchSignals, data, eventId, retryDuration)
 
@@ -92,7 +92,7 @@ proc patchElements*(sse: SSEConnection, elements: string, selector="", mode=Oute
     if useViewTransition: lines.add("useViewTransition true")
     # Split multiline elements into separate data lines
     for elementLine in elements.split('\n'):
-      lines.add("elements " & elementLine)
+      lines.add("elements " & strip(elementLine))
 
   rawSend(sse, PatchElements, lines, eventId, retryDuration)
 

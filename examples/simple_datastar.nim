@@ -40,7 +40,7 @@ proc handleRunScript(request: Request) =
 
 # Look at html/index.html
 when isMainModule:
-  let (host, port) = ("192.168.1.159", 8080)
+  let (host, port) = ("localhost", 8080)
   var router = Router()
   router.get("/increment", handleIncrement)
   router.get("/update-clock", handleUpdateClock)

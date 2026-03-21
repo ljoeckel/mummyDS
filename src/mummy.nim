@@ -392,7 +392,7 @@ proc respond*(
     headers["Connection"] = "keep-alive"
 
   # If the body is big enough to justify compressing and not already compressed
-  if body.len > 860 and "Content-Encoding" notin headers:
+  if body.len > 860 and ("Content-Encoding" notin headers) and ("X-Proxy-Frontend" notin request.headers):
     if request.headers.headerContainsToken("Accept-Encoding", "gzip"):
       try:
         body = compress(body.cstring, body.len, DefaultCompression, dfGzip)
