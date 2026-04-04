@@ -1369,6 +1369,8 @@ proc loopForever(server: Server) {.raises: [OSError, IOSelectorsException].} =
                 clientDataEntry.sendsWaitingForUpgrade.setLen(0)
           else:
             # Was this file descriptor reused for a different client?
+            server.nsBindingAborted.add(encodedResponse.clientId)
+            if server.nsBindingAborted.len > 100: server.nsBindingAborted.delete(0) # limit growing   
             server.log(DebugLevel, "1372 Dropped response to disconnected client: ", $encodedResponse.clientId)
         else:
           if not server.nsBindingAborted.contains(encodedResponse.clientId) and not encodedResponse.closeConnection:

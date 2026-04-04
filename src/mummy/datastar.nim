@@ -92,7 +92,9 @@ proc patchElements*(sse: SSEConnection, elements: string, selector="", mode=Oute
     if useViewTransition: lines.add("useViewTransition true")
     # Split multiline elements into separate data lines
     for elementLine in elements.split('\n'):
-      lines.add("elements " & strip(elementLine))
+      let line = strip(elementLine)
+      if line.len > 0:
+        lines.add("elements " & strip(elementLine))
 
   rawSend(sse, PatchElements, lines, eventId, retryDuration)
 
@@ -119,8 +121,11 @@ proc executeScript*(sse: SSEConnection, script: string, autoRemove=true, attribu
 
 # Forward to another page
 proc forward*(sse: SSEConnection, url: string) =
-    let data = readFile(url)
-    patchElements(sse, data)
+    try:
+      let data = readFile(url)
+      patchElements(sse, data)
+    except:
+      echo(fmt"[mummyDS/datastar] IOError: {url} not found")
 
 
 # Serve static resources (html, css, etc.
@@ -129,9 +134,10 @@ proc serveStatic*(request: Request) {.gcsafe.} = #, file: string, ext: string) =
     if fn.len == 0 and dir == "/": 
         fn = "index"
         ext = ".html"
-    let path = Path("html/" & $fn & $ext)
+    let path = Path(fmt"html/{fn}{ext}")
     try:
         let data = readFile($path)
         request.respond(200, @[("Content-Type", getMimeType(ext))], data)
     except:
-        request.respond(404, @[("Content-Type", "text/html")], "<h1>File '" & $path & "' not found</h1>")
+        echo(fmt"[mummyDS/datastar 139] 404 {path} not found")
+        request.respond(404, @[("Content-Type", "text/html")], fmt"<h1>File '{path}' not found</h1>")
