@@ -32,12 +32,23 @@ proc getSignals*(req: Request): JsonNode =
   if req.httpMethod == "POST":
     signals = $req.body
   else:
-    if req.uri.contains('='):
+    if req.uri.contains("?datastar="): # Datastar request
       let encodedValue = req.uri.split('=')[1]
       signals = decodeUrl(encodedValue)
+    elif req.uri.contains("?"): # parameter(s) from GET request
+      signals = "{"
+      let encodedValue = req.uri.split('?')[1]
+      if encodedValue.contains('&'):
+        for param in encodedValue.split('&'): # multiple params
+          let subs = param.split('=')
+          signals.add(fmt""" "{subs[0]}": "{subs[1]}", """)
+      else: # single param
+        let subs = encodedValue.split('=')
+        signals.add(fmt""" "{subs[0]}": "{subs[1]}" """)
+      signals.add("}")
     else:
       signals = "{}"
-  result = parseJson(signals)
+  result = parseJson(signals) # convert to json
 
 proc getSignals*(sse: SSEConnection): JsonNode =
   getSignals(sse.request)
