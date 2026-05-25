@@ -19,6 +19,12 @@ type
     Remove = "remove"
 
 
+template SSE*(req: Request, body: untyped) =
+    var sse {.inject.} = req.respondSSE() # sse for body
+    defer: sse.close()
+    body
+
+
 proc isNsBindingAborted(sse: SSEConnection): bool =
   # Remove a disconnected clientId entry from the list
   let idx = sse.server.nsBindingAborted.find(sse.clientId)
@@ -138,6 +144,9 @@ proc forward*(sse: SSEConnection, url: string) =
     except:
       echo(fmt"[mummyDS/datastar] IOError: {url} not found")
 
+proc forward*(req: Request, url: string) =
+    SSE(req):
+        forward(sse, url)
 
 # Serve static resources (html, css, etc.
 proc serveStatic*(request: Request) {.gcsafe.} = #, file: string, ext: string) =
