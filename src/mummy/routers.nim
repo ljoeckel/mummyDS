@@ -1,5 +1,6 @@
-import ../mummy, std/strutils, webby/urls
-
+import ../mummy, std/strutils, std/json, webby/urls
+import datastar
+import yottadb
 export queryparams
 
 type
@@ -196,6 +197,26 @@ proc partialWildcardMatches(partialWildcard, test: string): bool {.inline.} =
   let literal = partialWildcard[1 .. ^2]
   return literal in test
 
+proc isSessionValid(request: Request): bool =
+    # Check the token in the Cookie with the token in ^Session(userid,"oid") for equality
+    result = true
+    let signals = getSignals(request)
+    if signals.contains("userid"):
+        let userid = signals["userid"].getStr()
+        if not userid.isEmptyOrWhitespace:
+            let dboid = Get ^Session(userid, "oid")
+            if request.headers.contains("Cookie"):
+              let token = request.headers["Cookie"]
+              if token.len > 0 and '=' in token:
+                  let name = token.split('=')[0]
+                  let oid = token.split('=')[1]
+                  if oid.len > 0 and oid != dboid:
+                    echo "ERROR: Token missmatch. 'token' in ^Session != 'token' in http cookie"
+                    Kill ^Session(userid) # kill the complete session
+                    if request.path != "/login":
+                        result = false
+
+
 proc toHandler*(router: Router): RequestHandler =
   return proc(request: Request) =
     ## All requests arrive here to be routed
@@ -266,6 +287,11 @@ proc toHandler*(router: Router): RequestHandler =
             inc i
 
         if matchedRoute:
+          # Check the tokens
+          if not isSessionValid(request):
+              notFound()
+              return
+
           matchedSomeRoute = true
           if request.httpMethod == route.httpMethod: # We have a winner
             route.handler(request)

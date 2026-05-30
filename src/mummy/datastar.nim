@@ -1,6 +1,7 @@
 import ../mummy
 import std/[json, strutils, uri, strformat, options, os, paths, tables]
 import mimetypes
+import yottadb
 
 type
   EventType* = enum
@@ -59,30 +60,34 @@ proc getSignals*(req: Request): JsonNode =
 proc getSignals*(sse: SSEConnection): JsonNode =
   getSignals(sse.request)
 
+proc getSignal(sse: SSEConnection, name: string): string =
+    let signals = getSignals(sse)
+    if signals.contains(name):
+        return $signals[name]
+
 
 proc rawSend(sse: SSEConnection, evttype: EventType, lines:seq[string], eventId="", retryDuration=0) =
-  var evt: SSEEvent
-  evt.event = some($evttype)
-  if eventId.len > 0: evt.id = some(eventId)
-  if retryDuration > 0: evt.retry = some(retryDuration)
+    var evt: SSEEvent
+    evt.event = some($evttype)
+    if eventId.len > 0: evt.id = some(eventId)
+    if retryDuration > 0: evt.retry = some(retryDuration)
 
-  for i in 0..<lines.len:
-    evt.data.add(lines[i])
-    if i < lines.len-1: evt.data.add('\n')
+    for i in 0..<lines.len:
+        evt.data.add(lines[i])
+        if i < lines.len-1: evt.data.add('\n')
 
-  sse.send(evt)
+    sse.send(evt)
 
 
 # Datastar 'patchSignals'
-proc patchSignals*(sse: SSEConnection, signals: JsonNode, onlyIfMissing=false,  eventId="", retryDuration=0) {.raises: [MummyError].} =
+proc patchSignals*(sse: SSEConnection, signals: JsonNode, onlyIfMissing=false, eventId="", retryDuration=0) {.raises: [MummyError].} =
   # Check if a client was prior disconnected (Tab closed, Browser closed, etc.)
   # Then raise exception that the client-program can cleanup
   if isNsBindingAborted(sse): raise newException(MummyError, fmt"NS_BINDING_ABORTED for clientId:{sse.clientId}")
 
   var data: seq[string]
-  if onlyIfMissing: data.add("onlyIfMissing true\n")
-  data.add("signals " & strip($signals) & "\n")
-
+  if onlyIfMissing: data.add("onlyIfMissing true")
+  data.add("signals " & strip($signals))
   rawSend(sse, PatchSignals, data, eventId, retryDuration)
 
 
@@ -145,11 +150,12 @@ proc forward*(sse: SSEConnection, url: string) =
       echo(fmt"[mummyDS/datastar] IOError: {url} not found")
 
 proc forward*(req: Request, url: string) =
-    SSE(req):
-        forward(sse, url)
+    var sse = req.respondSSE() # sse for body
+    defer: sse.close()
+    forward(sse, url)
 
 # Serve static resources (html, css, etc.
-proc serveStatic*(request: Request) {.gcsafe.} = #, file: string, ext: string) =
+proc serveStatic*(request: Request) {.gcsafe.} =
     var (dir, fn, ext) = request.path.splitFile()
     if fn.len == 0 and dir == "/": 
         fn = "index"
@@ -159,5 +165,10 @@ proc serveStatic*(request: Request) {.gcsafe.} = #, file: string, ext: string) =
         let data = readFile($path)
         request.respond(200, @[("Content-Type", getMimeType(ext))], data)
     except:
-        echo(fmt"[mummyDS/datastar 139] 404 {path} not found")
-        request.respond(404, @[("Content-Type", "text/html")], fmt"<h1>File '{path}' not found</h1>")
+        if not ext.isEmptyOrWhitespace:
+            echo(fmt"[mummyDS/datastar:169] 404 {path} not found")
+            request.respond(404, @[("Content-Type", "text/html")], fmt"<h1>File '{path}' not found</h1>")
+        else:
+            echo(fmt"[mummyDS/datastar:172] 404 {path} (Token missmatch?)")
+            let data = readFile("html/login.html")
+            request.respond(200, @[("Content-Type", "text/html")], data)

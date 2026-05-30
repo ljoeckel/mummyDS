@@ -13,6 +13,8 @@ import mummy/common, mummy/internal, std/atomics, std/base64,
 
 from std/strutils import find, cmpIgnoreCase, toLowerAscii
 
+import yottadb
+
 when defined(linux):
   when defined(nimdoc):
     # Why am I doing this?
@@ -503,10 +505,7 @@ proc upgradeToWebSocket*(
 
   request.respond(101, headers)
 
-proc respondSSE*(
-  request: Request,
-  headers: sink HttpHeaders = emptyHttpHeaders()
-): SSEConnection {.raises: [MummyError], gcsafe.} =
+proc respondSSE*(request: Request, headers: sink HttpHeaders = emptyHttpHeaders(), cookie = ""): SSEConnection {.raises: [MummyError], gcsafe.} =
   ## Starts a Server-Sent Events (SSE) response for real-time streaming.
   ## Sets appropriate SSE headers and keeps the connection open.
   ## Returns an SSEConnection that can be used to send events.
@@ -520,6 +519,8 @@ proc respondSSE*(
   headers["Content-Type"] = "text/event-stream"
   headers["Cache-Control"] = "no-cache"
   headers["Connection"] = "keep-alive"
+  if cookie.len > 0:
+    headers["Set-Cookie"] = cookie  # ["Set-Cookie"] = fmt"token={token}; Secure; HttpOnly; SameSite=Strict; Path=/"
 
   result = SSEConnection(
     server: request.server,
