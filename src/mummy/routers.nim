@@ -200,21 +200,19 @@ proc partialWildcardMatches(partialWildcard, test: string): bool {.inline.} =
 proc isSessionValid(request: Request): bool =
     # Check the token in the Cookie with the token in ^Session(userid,"oid") for equality
     result = true
-    let signals = getSignals(request)
-    if signals.contains("userid"):
-        let userid = signals["userid"].getStr()
-        if not userid.isEmptyOrWhitespace:
-            let dboid = Get ^Session(userid, "oid")
-            if request.headers.contains("Cookie"):
-              let token = request.headers["Cookie"]
-              if token.len > 0 and '=' in token:
-                  let name = token.split('=')[0]
-                  let oid = token.split('=')[1]
-                  if oid.len > 0 and oid != dboid:
-                    echo "ERROR: Token missmatch. 'token' in ^Session != 'token' in http cookie"
-                    Kill ^Session(userid) # kill the complete session
-                    if request.path != "/login":
-                        result = false
+    let userid = getUserId(request)
+    if not userid.isEmptyOrWhitespace:
+        let dboid = Get ^Session(userid, "oid")
+        if request.headers.contains("Cookie"):
+          let token = request.headers["Cookie"]
+          if token.len > 0 and '=' in token:
+              let name = token.split('=')[0]
+              let oid = token.split('=')[1]
+              if oid.len > 0 and oid != dboid:
+                echo "ERROR: Token missmatch. 'token' in ^Session != 'token' in http cookie"
+                #Kill ^Session(userid) # kill the complete session
+                if request.path != "/login":
+                    result = false
 
 
 proc toHandler*(router: Router): RequestHandler =
@@ -230,6 +228,10 @@ proc toHandler*(router: Router): RequestHandler =
     if request.path.len == 0 or request.path[0] != '/':
       notFound()
       return
+
+    let signals = getSignals(request)
+    if signals.len > 0:
+        syncSignalsToDb(signals)
 
     try:
       let pathParts = block:

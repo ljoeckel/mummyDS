@@ -26,12 +26,27 @@ template SSE*(req: Request, body: untyped) =
     body
 
 
+func stripSignal*(signal: string): string =
+    result = strip(signal)
+    if result.startsWith("\"") and result.endsWith("\""): # Remove "xxxx" -> xxxx
+        result = result[1..^2]
+
+
 proc isNsBindingAborted(sse: SSEConnection): bool =
   # Remove a disconnected clientId entry from the list
   let idx = sse.server.nsBindingAborted.find(sse.clientId)
   if idx != -1:
     sse.server.nsBindingAborted.delete(idx)
     result = true
+
+
+proc syncSignalsToDb*(signals: JsonNode) =
+    let userid = if "userid" in signals: signals["userid"].getStr() else: ""
+    if not userid.isEmptyOrWhitespace:
+        for (name, value) in signals.pairs:
+            let val = stripSignal($value)
+            if val != Get ^Session(userid, name):
+                Set: ^Session(userid, name) = val
 
 
 proc getSignals*(req: Request): JsonNode =
@@ -48,22 +63,33 @@ proc getSignals*(req: Request): JsonNode =
       if encodedValue.contains('&'):
         for param in encodedValue.split('&'): # multiple params
           let subs = param.split('=')
-          signals.add(fmt""" "{subs[0]}": "{subs[1]}", """)
+          if subs.len > 1:
+            signals.add(fmt""" "{subs[0]}": "{subs[1]}", """)
+          else:
+            echo "ERROR: Malformed signal: ", subs
       else: # single param
         let subs = encodedValue.split('=')
-        signals.add(fmt""" "{subs[0]}": "{subs[1]}" """)
+        if subs.len > 1:
+            signals.add(fmt""" "{subs[0]}": "{subs[1]}" """)
+        else:
+            echo "ERROR: Malformed signal: ", subs
       signals.add("}")
     else:
       signals = "{}"
   result = parseJson(signals) # convert to json
 
-proc getSignals*(sse: SSEConnection): JsonNode =
-  getSignals(sse.request)
 
-proc getSignal(sse: SSEConnection, name: string): string =
-    let signals = getSignals(sse)
-    if signals.contains(name):
-        return $signals[name]
+proc getUserId*(req: Request): string =
+    let signals = getSignals(req)
+    if "userid" in signals:
+        result = signals["userid"].getStr()
+
+proc getUserId*(sse: SSEConnection): string =
+    getUserId(sse.request)
+
+
+proc getSignal*(userid: string, name: string): string =
+    Get ^Session(userid, name)
 
 
 proc rawSend(sse: SSEConnection, evttype: EventType, lines:seq[string], eventId="", retryDuration=0) =
@@ -80,7 +106,7 @@ proc rawSend(sse: SSEConnection, evttype: EventType, lines:seq[string], eventId=
 
 
 # Datastar 'patchSignals'
-proc patchSignals*(sse: SSEConnection, signals: JsonNode, onlyIfMissing=false, eventId="", retryDuration=0) {.raises: [MummyError].} =
+proc patchSignals*(sse: SSEConnection, signals: JsonNode, onlyIfMissing=false, eventId="", retryDuration=0) {.raises: [MummyError, KeyError, TpRestart, TpRollback, YdbError].} =
   # Check if a client was prior disconnected (Tab closed, Browser closed, etc.)
   # Then raise exception that the client-program can cleanup
   if isNsBindingAborted(sse): raise newException(MummyError, fmt"NS_BINDING_ABORTED for clientId:{sse.clientId}")
@@ -89,6 +115,7 @@ proc patchSignals*(sse: SSEConnection, signals: JsonNode, onlyIfMissing=false, e
   if onlyIfMissing: data.add("onlyIfMissing true")
   data.add("signals " & strip($signals))
   rawSend(sse, PatchSignals, data, eventId, retryDuration)
+  syncSignalsToDb(signals)
 
 
 # Datastar 'patchElements'
@@ -153,6 +180,7 @@ proc forward*(req: Request, url: string) =
     var sse = req.respondSSE() # sse for body
     defer: sse.close()
     forward(sse, url)
+
 
 # Serve static resources (html, css, etc.
 proc serveStatic*(request: Request) {.gcsafe.} =
