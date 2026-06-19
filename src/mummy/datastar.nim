@@ -40,13 +40,19 @@ proc isNsBindingAborted(sse: SSEConnection): bool =
     result = true
 
 
+proc syncSignalsToDb*(userid: string, signals: JsonNode) =
+    if userid.isEmptyOrWhitespace:
+        return
+
+    for (name, value) in signals.pairs:
+        let val = stripSignal($value)
+        if val != Get ^Session(userid, name):
+            Set: ^Session(userid, name) = val
+
+
 proc syncSignalsToDb*(signals: JsonNode) =
     let userid = if "userid" in signals: signals["userid"].getStr() else: ""
-    if not userid.isEmptyOrWhitespace:
-        for (name, value) in signals.pairs:
-            let val = stripSignal($value)
-            if val != Get ^Session(userid, name):
-                Set: ^Session(userid, name) = val
+    syncSignalsToDb(userid, signals)
 
 
 proc getSignals*(req: Request): JsonNode =
@@ -115,8 +121,13 @@ proc patchSignals*(sse: SSEConnection, signals: JsonNode, onlyIfMissing=false, e
   if onlyIfMissing: data.add("onlyIfMissing true")
   data.add("signals " & strip($signals))
   rawSend(sse, PatchSignals, data, eventId, retryDuration)
-  syncSignalsToDb(signals)
-
+  var userid: string
+  try:
+    userid = getUserId(sse)
+    syncSignalsToDb(userid, signals)
+  except:
+    echo "ERROR: Could not parse userid"
+    
 
 # Datastar 'patchElements'
 proc patchElements*(sse: SSEConnection, elements: string, selector="", mode=Outer, useViewTransition=false, eventId="", retryDuration=0) {.raises: [MummyError].} =
