@@ -227,11 +227,11 @@ proc toHandler*(router: Router): RequestHandler =
     if request.path.len == 0 or request.path[0] != '/':
       notFound()
       return
+    
+    let signals = getSignals(request)
+    if signals.len > 0: syncSignalsToDb(signals)
 
     try:
-      let signals = getSignals(request)
-      if signals.len > 0: syncSignalsToDb(signals)
-
       let pathParts = block:
         var tmp = request.path.split('/')
         tmp.delete(0)

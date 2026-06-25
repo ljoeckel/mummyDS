@@ -24,7 +24,7 @@ proc getInt*(userid: string, key: string): int =
 
 proc getInt*(unused: Context, userid: string, key: string): int =
 # Allow access to another context getInt("rsscollector", "lastRun")
-    Get ^Session(userid, key).int
+    getInt(userid, key)
 
 proc getInt*(ctx: Context, key: string): int =
     getInt(ctx.userid, key)
@@ -127,31 +127,37 @@ proc syncSignalsToDb*(signals: JsonNode) =
 
 proc getSignals*(req: Request): JsonNode =
   var signals: string
-  if req.httpMethod == "POST":
-    signals = $req.body
-  else:
-    if req.uri.contains("?datastar="): # Datastar request
-      let encodedValue = req.uri.split('=')[1]
-      signals = decodeUrl(encodedValue)
-    elif req.uri.contains("?"): # parameter(s) from GET request
-      signals = "{"
-      let encodedValue = req.uri.split('?')[1]
-      if encodedValue.contains('&'):
-        for param in encodedValue.split('&'): # multiple params
-          let subs = param.split('=')
-          if subs.len > 1:
-            signals.add(fmt""" "{subs[0]}": "{subs[1]}", """)
-          else:
-            echo "ERROR: Malformed signal: ", subs
-      else: # single param
-        let subs = encodedValue.split('=')
-        if subs.len > 1:
-            signals.add(fmt""" "{subs[0]}": "{subs[1]}" """)
+  try:
+      if req.httpMethod == "POST":
+        signals = $req.body
+      else:
+        if req.uri.contains("?datastar="): # Datastar request
+          let encodedValue = req.uri.split('=')[1]
+          signals = decodeUrl(encodedValue)
+        elif req.uri.contains("?"): # parameter(s) from GET request
+          signals = "{"
+          let encodedValue = req.uri.split('?')[1]
+          if encodedValue.contains('&'):
+            for param in encodedValue.split('&'): # multiple params
+              let subs = param.split('=')
+              if subs.len > 1:
+                signals.add(fmt""" "{subs[0]}": "{subs[1]}", """)
+              else:
+                echo "ERROR: Malformed signal: ", subs
+          else: # single param
+            let subs = encodedValue.split('=')
+            if subs.len > 1:
+                signals.add(fmt""" "{subs[0]}": "{subs[1]}" """)
+            else:
+                echo "ERROR: Malformed signal: ", subs
+          signals.add("}")
         else:
-            echo "ERROR: Malformed signal: ", subs
-      signals.add("}")
-    else:
-      signals = "{}"
+          signals = "{}"
+  except:
+    echo "ERROR getting signals: signals=", $signals
+    echo "Exception: ", getCurrentExceptionMsg()
+    signals = "{}"
+
   result = parseJson(signals) # convert to json
 
 
