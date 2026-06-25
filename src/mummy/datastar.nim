@@ -4,6 +4,80 @@ import mimetypes
 import yottadb
 
 type
+    Context* = object
+        userid*: string
+
+# -- Context Getter --
+proc getStr*(userid: string, key: string): string =
+    Get ^Session(userid, key)
+
+proc getStr*(unused: Context, userid: string, key: string): string =
+# Allow access to another context getStr("rsscollector", "info")
+    Get ^Session(userid, key)
+
+proc getStr*(ctx: Context, key: string): string =
+    getStr(ctx.userid, key)
+
+
+proc getInt*(userid: string, key: string): int =
+    Get ^Session(userid, key).int
+
+proc getInt*(unused: Context, userid: string, key: string): int =
+# Allow access to another context getInt("rsscollector", "lastRun")
+    Get ^Session(userid, key).int
+
+proc getInt*(ctx: Context, key: string): int =
+    getInt(ctx.userid, key)
+
+
+proc getFloat*(userid: string, key: string): float =
+    Get ^Session(userid, key).float
+
+proc getFloat*(unused: Context, userid: string, key: string): float =
+    Get ^Session(userid, key).float
+
+proc getFloat*(ctx: Context, key: string): float =
+    getFloat(ctx.userid, key)
+
+
+proc getBool*(unused: Context, userid: string, key: string): bool =
+    Get ^Session(userid, key).bool
+
+proc getBool*(userid: string, key: string): bool =
+    Get ^Session(userid, key).bool
+
+proc getBool*(ctx: Context, key: string): bool =
+    getBool(ctx.userid, key)
+
+
+proc getSeq*[T](ctx: Context, key: string): seq[T] =
+# Must be called as 'getSeq[string](ctx, "subscripts_low")'
+    for k in QueryItr ^Session(ctx.userid, key).keys:
+        if k[1] == key:
+            when T is string:
+                result.add(Get ^Session(k))
+            elif T is int:
+                result.add(Get ^Session(k).int)
+            elif T is float:                
+                result.add(Get ^Session(k).float)
+            elif T is bool:
+                result.add(Get ^Session(k).bool)
+            else:
+                echo "ERROR: Type ", T, " not supported in toSeq"
+        else:
+            break
+
+
+proc save*[T](ctx: Context, key: string, value: T) =
+    when T is seq:
+        Kill ^Session(ctx.userid, key)
+        for idx in 0..<value.len:
+            Set: ^Session(ctx.userid, key, idx) = $value[idx]
+    else:
+        Set: ^Session(ctx.userid, key) = $value
+
+
+type
   EventType* = enum
     PatchElements = "datastar-patch-elements"
     PatchSignals = "datastar-patch-signals"
@@ -40,7 +114,8 @@ proc isNsBindingAborted(sse: SSEConnection): bool =
     result = true
 
 
-proc syncSignalsToDb*(userid: string, signals: JsonNode) =
+proc syncSignalsToDb*(signals: JsonNode) =
+    let userid = if "userid" in signals: signals["userid"].getStr() else: ""
     if userid.isEmptyOrWhitespace:
         return
 
@@ -48,11 +123,6 @@ proc syncSignalsToDb*(userid: string, signals: JsonNode) =
         let val = stripSignal($value)
         if val != Get ^Session(userid, name):
             Set: ^Session(userid, name) = val
-
-
-proc syncSignalsToDb*(signals: JsonNode) =
-    let userid = if "userid" in signals: signals["userid"].getStr() else: ""
-    syncSignalsToDb(userid, signals)
 
 
 proc getSignals*(req: Request): JsonNode =
@@ -85,17 +155,26 @@ proc getSignals*(req: Request): JsonNode =
   result = parseJson(signals) # convert to json
 
 
-proc getUserId*(req: Request): string =
+proc getContext*(req: Request): Context =
     let signals = getSignals(req)
     if "userid" in signals:
-        result = signals["userid"].getStr()
+        result.userid = signals["userid"].getStr()
 
-proc getUserId*(sse: SSEConnection): string =
-    getUserId(sse.request)
+proc getContext*(sse: SSEConnection): Context =
+    getContext(sse.request)
 
 
-proc getSignal*(userid: string, name: string): string =
-    Get ^Session(userid, name)
+# proc getUserId*(req: Request): string =
+#     let signals = getSignals(req)
+#     if "userid" in signals:
+#         result = signals["userid"].getStr()
+
+# proc getUserId*(sse: SSEConnection): string =
+#     getUserId(sse.request)
+
+
+# proc getSignal*(userid: string, name: string): string =
+#     Get ^Session(userid, name)
 
 
 proc rawSend(sse: SSEConnection, evttype: EventType, lines:seq[string], eventId="", retryDuration=0) =
@@ -123,8 +202,7 @@ proc patchSignals*(sse: SSEConnection, signals: JsonNode, onlyIfMissing=false, e
   rawSend(sse, PatchSignals, data, eventId, retryDuration)
   var userid: string
   try:
-    userid = getUserId(sse)
-    syncSignalsToDb(userid, signals)
+    syncSignalsToDb(signals)
   except:
     echo "ERROR: Could not parse userid"
     

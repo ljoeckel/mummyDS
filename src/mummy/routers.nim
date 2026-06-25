@@ -200,9 +200,9 @@ proc partialWildcardMatches(partialWildcard, test: string): bool {.inline.} =
 proc isSessionValid(request: Request): bool =
     # Check the token in the Cookie with the token in ^Session(userid,"oid") for equality
     result = true
-    let userid = getUserId(request)
-    if not userid.isEmptyOrWhitespace:
-        let dboid = Get ^Session(userid, "oid")
+    let ctx = getContext(request)
+    if not ctx.userid.isEmptyOrWhitespace:
+        let dboid = ctx.getStr("oid")
         if request.headers.contains("Cookie"):
           let token = request.headers["Cookie"]
           if token.len > 0 and '=' in token:
@@ -210,7 +210,6 @@ proc isSessionValid(request: Request): bool =
               let oid = token.split('=')[1]
               if oid.len > 0 and oid != dboid:
                 echo "ERROR: Token missmatch. 'token' in ^Session != 'token' in http cookie"
-                #Kill ^Session(userid) # kill the complete session
                 if request.path != "/login":
                     result = false
 
@@ -229,11 +228,10 @@ proc toHandler*(router: Router): RequestHandler =
       notFound()
       return
 
-    let signals = getSignals(request)
-    if signals.len > 0:
-        syncSignalsToDb(signals)
-
     try:
+      let signals = getSignals(request)
+      if signals.len > 0: syncSignalsToDb(signals)
+
       let pathParts = block:
         var tmp = request.path.split('/')
         tmp.delete(0)
