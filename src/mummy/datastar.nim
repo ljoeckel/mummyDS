@@ -76,6 +76,8 @@ proc save*[T](ctx: Context, key: string, value: T) =
     else:
         Set: ^Session(ctx.userid, key) = $value
 
+proc isAdmin*(ctx: Context): bool =
+    ctx.userid == "admin"
 
 type
   EventType* = enum
@@ -216,7 +218,6 @@ proc patchSignals*(sse: SSEConnection, signals: JsonNode, onlyIfMissing=false, e
 # Datastar 'patchElements'
 proc patchElements*(sse: SSEConnection, elements: string, selector="", mode=Outer, useViewTransition=false, eventId="", retryDuration=0) {.raises: [MummyError].} =
   if isNsBindingAborted(sse): raise newException(MummyError, fmt"NS_BINDING_ABORTED for clientId:{sse.clientId}")
-
   var lines: seq[string]
   if mode == Remove and elements.len == 0:
     # Special ordering for remove mode without elements
@@ -267,7 +268,7 @@ proc executeScript*(sse: SSEConnection, script: string, autoRemove=true, attribu
 proc forward*(sse: SSEConnection, url: string) =
     try:
       let data = readFile(url)
-      patchElements(sse, data)
+      patchElements(sse, data, mode=Replace)
     except:
       echo(fmt"[mummyDS/datastar] IOError: {url} not found")
 
