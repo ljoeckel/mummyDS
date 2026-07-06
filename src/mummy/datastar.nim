@@ -1,7 +1,16 @@
 import ../mummy
-import std/[json, strutils, uri, strformat, options, os, paths, tables]
+import std/[json, strutils, uri, strformat, options, os, paths, tables, enumerate]
 import mimetypes
 import yottadb
+
+proc trim(s: string): string =
+    # remove all leading, trailing and double spaces from a string " abc  def " -> "abc def"
+    result = strip(s).replace("\n", "")
+    var idx = result.find("  ")
+    while idx > 0:
+        result = result.replace("  ", " ")
+        idx = result.find("  ")
+   
 
 type
     Context* = object
@@ -67,6 +76,13 @@ proc getSeq*[T](ctx: Context, key: string): seq[T] =
         else:
             break
 
+proc getJson*(ctx: Context, key: string): JsonNode =
+    let str = Get ^Session(ctx.userid, key)
+    try:
+        result = parseJson(str)
+    except:
+        result = parseJson("{}")
+
 
 proc save*[T](ctx: Context, key: string, value: T) =
     when T is seq:
@@ -122,9 +138,16 @@ proc syncSignalsToDb*(signals: JsonNode) =
         return
 
     for (name, value) in signals.pairs:
-        let val = stripSignal($value)
-        if val != Get ^Session(userid, name):
-            Set: ^Session(userid, name) = val
+        case value.kind
+        of JArray:
+            for (idx, node) in enumerate(value):
+                let val = stripSignal($node)
+                if val != Get ^Session(userid, name, idx):
+                    Set: ^Session(userid, name, idx) = val
+        else:
+            let val = stripSignal($value)
+            if val != Get ^Session(userid, name):
+                Set: ^Session(userid, name) = val
 
 
 proc getSignals*(req: Request): JsonNode =
@@ -170,19 +193,6 @@ proc getContext*(req: Request): Context =
 
 proc getContext*(sse: SSEConnection): Context =
     getContext(sse.request)
-
-
-# proc getUserId*(req: Request): string =
-#     let signals = getSignals(req)
-#     if "userid" in signals:
-#         result = signals["userid"].getStr()
-
-# proc getUserId*(sse: SSEConnection): string =
-#     getUserId(sse.request)
-
-
-# proc getSignal*(userid: string, name: string): string =
-#     Get ^Session(userid, name)
 
 
 proc rawSend(sse: SSEConnection, evttype: EventType, lines:seq[string], eventId="", retryDuration=0) =
@@ -236,10 +246,12 @@ proc patchElements*(sse: SSEConnection, elements: string, selector="", mode=Oute
     if mode != Outer: lines.add("mode " & $mode)
     if useViewTransition: lines.add("useViewTransition true")
     # Split multiline elements into separate data lines
-    for elementLine in elements.split('\n'):
-      let line = strip(elementLine)
-      if line.len > 0:
-        lines.add("elements " & strip(elementLine))
+    #let ln = elements.replace("\n", "")
+    lines.add("elements " & trim(elements))
+    # for elementLine in elements.split('\n'):
+    #   let line = strip(elementLine)
+    #   if line.len > 0:
+    #     lines.add("elements " & strip(elementLine))
 
   rawSend(sse, PatchElements, lines, eventId, retryDuration)
 
