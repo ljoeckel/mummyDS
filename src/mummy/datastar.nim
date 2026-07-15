@@ -292,7 +292,7 @@ proc forward*(sse: SSEConnection, url: string) =
       let data = readFile(url)
       patchElements(sse, data, mode=Replace)
     except:
-      echo(fmt"[mummyDS/datastar] IOError: {url} not found")
+      echo(fmt"[mummyDS/datastar:forward] IOError: {url} not found")
 
 proc forward*(req: Request, url: string) =
     var sse = req.respondSSE() # sse for body
@@ -303,18 +303,22 @@ proc forward*(req: Request, url: string) =
 # Serve static resources (html, css, etc.
 proc serveStatic*(request: Request) {.gcsafe.} =
     var (dir, fn, ext) = request.path.splitFile()
-    if fn.len == 0 and dir == "/": 
-        fn = "index"
-        ext = ".html"
+    if dir.startsWith("/"):
+        if fn.len == 0:  # /
+            (fn, ext) = ("index", ".html")        
+        elif ext.len == 0:
+            forward(request, fmt"{dir}/{fn}")  # /api/list-globals
+           
+    
     let path = Path(fmt"html/{fn}{ext}")
     try:
         let data = readFile($path)
         request.respond(200, @[("Content-Type", getMimeType(ext))], data)
     except:
         if not ext.isEmptyOrWhitespace:
-            echo(fmt"[mummyDS/datastar:169] 404 {path} not found")
+            echo(fmt"[mummyDS/datastar:serveStatic.319] 404 {path} not found")
             request.respond(404, @[("Content-Type", "text/html")], fmt"<h1>File '{path}' not found</h1>")
         else:
-            echo(fmt"[mummyDS/datastar:172] 404 {path} (Token missmatch?)")
+            echo(fmt"[mummyDS/datastar:serveStatic.322] 404 {path} (Token missmatch?)")
             let data = readFile("html/login.html")
             request.respond(200, @[("Content-Type", "text/html")], data)
