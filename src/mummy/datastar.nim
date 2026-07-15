@@ -58,9 +58,15 @@ proc getBool*(userid: string, key: string): bool =
 proc getBool*(ctx: Context, key: string): bool =
     getBool(ctx.userid, key)
 
-
-proc getSeq*[T](ctx: Context, key: string): seq[T] =
-# Must be called as 'getSeq[string](ctx, "subscripts_low")'
+proc getSeq*(ctx: Context, key: string, T: type = string): seq[T] =
+#[Must be called as 'getSeq[string](ctx, "subscripts_low")'
+In HTML:
+data-signals="{
+   mnemonics: ['GET', 'SET', 'ORD'],
+   ints: [1,2,3],
+   floats: [1.1, 2.2, 3.3],
+   bools: [true, false, false], 
+]#
     for k in QueryItr ^Session(ctx.userid, key).keys:
         if k[1] == key:
             when T is string:
@@ -75,6 +81,7 @@ proc getSeq*[T](ctx: Context, key: string): seq[T] =
                 echo "ERROR: Type ", T, " not supported in toSeq"
         else:
             break
+
 
 proc getJson*(ctx: Context, key: string): JsonNode =
     let str = Get ^Session(ctx.userid, key)
@@ -195,7 +202,7 @@ proc getContext*(sse: SSEConnection): Context =
     getContext(sse.request)
 
 
-proc rawSend(sse: SSEConnection, evttype: EventType, lines:seq[string], eventId="", retryDuration=0) =
+proc rawSend(sse: SSEConnection, evttype: EventType, lines:seq[string], eventId="", retryDuration=0) {.raises: [MummyError].} =
     var evt: SSEEvent
     evt.event = some($evttype)
     if eventId.len > 0: evt.id = some(eventId)
@@ -205,7 +212,10 @@ proc rawSend(sse: SSEConnection, evttype: EventType, lines:seq[string], eventId=
         evt.data.add(lines[i])
         if i < lines.len-1: evt.data.add('\n')
 
-    sse.send(evt)
+    try:
+        sse.send(evt)
+    except:
+        raise newException(MummyError, fmt"{getCurrentExceptionMsg()} for clientId:{sse.clientId}")
 
 
 # Datastar 'patchSignals'
