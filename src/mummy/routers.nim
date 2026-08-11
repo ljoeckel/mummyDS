@@ -203,7 +203,7 @@ proc isSessionValid(request: Request): bool =
     let ctx = getContext(request)
     if not ctx.userid.isEmptyOrWhitespace:
         let dboid = ctx.getStr("oid")
-        if request.headers.contains("Cookie"):
+        if dboid.len > 0 and request.headers.contains("Cookie"):
           let token = request.headers["Cookie"]
           if token.len > 0 and '=' in token:
               let name = token.split('=')[0]

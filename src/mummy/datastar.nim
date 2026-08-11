@@ -308,9 +308,9 @@ proc serveStatic*(request: Request) {.gcsafe.} =
             (fn, ext) = ("index", ".html")        
         elif ext.len == 0:
             forward(request, fmt"{dir}/{fn}")  # /api/list-globals
+            
            
-    
-    let path = Path(fmt"html/{fn}{ext}")
+    let path = if dir == "/": Path(fmt"html/{fn}{ext}") else: Path(fmt".{dir}/{fn}{ext}")
     try:
         let data = readFile($path)
         request.respond(200, @[("Content-Type", getMimeType(ext))], data)
