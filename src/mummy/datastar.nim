@@ -4,13 +4,25 @@ import mimetypes
 import yottadb
 
 proc trim(s: string): string =
-    # remove all leading, trailing and double spaces from a string " abc  def " -> "abc def"
-    result = strip(s).replace("\n", "")
-    var idx = result.find("  ")
-    while idx > 0:
-        result = result.replace("  ", " ")
-        idx = result.find("  ")
-   
+    result = newString(s.len)
+    var pos = 0
+    var haveSpace = false
+    for c in s:
+        if c == '\n': continue
+        if c == ' ':
+            if haveSpace: 
+                continue
+            else:
+                haveSpace = true
+                if pos == 0: continue # leading space
+        elif haveSpace:
+            haveSpace = false
+        result[pos] = c
+        inc pos
+    
+    if result[^1] == ' ': dec pos # tail space
+    result.setLen(pos)
+
 
 type
     Context* = object
