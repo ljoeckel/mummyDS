@@ -29,12 +29,12 @@ type
         userid*: string
 
 # -- Context Getter --
+
 proc getStr*(userid: string, key: string): string =
     Get ^Session(userid, key)
 
 proc getStr*(unused: Context, userid: string, key: string): string =
-# Allow access to another context getStr("rsscollector", "info")
-    Get ^Session(userid, key)
+    getStr(userid, key)
 
 proc getStr*(ctx: Context, key: string): string =
     getStr(ctx.userid, key)
@@ -44,7 +44,6 @@ proc getInt*(userid: string, key: string): int =
     Get ^Session(userid, key).int
 
 proc getInt*(unused: Context, userid: string, key: string): int =
-# Allow access to another context getInt("rsscollector", "lastRun")
     getInt(userid, key)
 
 proc getInt*(ctx: Context, key: string): int =
@@ -55,20 +54,21 @@ proc getFloat*(userid: string, key: string): float =
     Get ^Session(userid, key).float
 
 proc getFloat*(unused: Context, userid: string, key: string): float =
-    Get ^Session(userid, key).float
+    getFloat(userid, key).float
 
 proc getFloat*(ctx: Context, key: string): float =
     getFloat(ctx.userid, key)
 
 
-proc getBool*(unused: Context, userid: string, key: string): bool =
-    Get ^Session(userid, key).bool
-
 proc getBool*(userid: string, key: string): bool =
     Get ^Session(userid, key).bool
 
+proc getBool*(unused: Context, userid: string, key: string): bool =
+    getBool(userid, key)
+
 proc getBool*(ctx: Context, key: string): bool =
     getBool(ctx.userid, key)
+
 
 proc getSeq*(ctx: Context, key: string, T: type = string): seq[T] =
 #[Must be called as 'getSeq[string](ctx, "subscripts_low")'
