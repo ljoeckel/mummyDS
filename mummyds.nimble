@@ -5,6 +5,7 @@ license     = "MIT"
 
 srcDir = "src"
 
+requires "nimyottadb >= 0.4.11"
 requires "nim >= 2.2.4"
 requires "zippy >= 0.10.19"
 requires "webby >= 0.2.1"
